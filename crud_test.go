@@ -3,6 +3,7 @@ package crud_test
 import (
 	"database/sql"
 	"log"
+	"reflect"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -72,18 +73,18 @@ func TestSetField(t *testing.T) {
 	instance := &testOutput{}
 
 	// Test case: Successfully setting an exported field's value
-	err := crud.SetField(instance, "Column1", "new value")
+	err := crud.SetField(reflect.ValueOf(instance), "Column1", "new value")
 	require.Equal(t, nil, err, "Expected no error setting an exported field")
 	require.Equal(t, "new value", instance.Column1, "The ExportedField should have been updated to 'new value'")
 
 	// Test case: Attempting to set a non-existing field
-	err = crud.SetField(instance, "NonExistingField", "value")
+	err = crud.SetField(reflect.ValueOf(instance), "NonExistingField", "value")
 	require.NotEqual(t, nil, err, "Expected an error setting a non-existing field")
 
 	// test case: complex data type
 	id := uuid.New()
 	// sql will return the data as a string
-	err = crud.SetField(instance, "ID", id.String())
+	err = crud.SetField(reflect.ValueOf(instance), "ID", id.String())
 	require.Equal(t, nil, err, "Expected no error setting an uuid field")
 }
 

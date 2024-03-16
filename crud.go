@@ -77,7 +77,7 @@ func Scan(instance any, rows *sql.Rows) (err error) {
 	}
 
 	for i, fieldName := range orderedFieldNames {
-		err = SetField(instance, fieldName, values[i])
+		err = SetField(reflect.ValueOf(instance), fieldName, values[i])
 		if err != nil {
 			return fmt.Errorf("error setting field: %w", err)
 		}
@@ -86,41 +86,38 @@ func Scan(instance any, rows *sql.Rows) (err error) {
 	return nil
 }
 
-func SetField(instance any, field string, value interface{}) error {
-	// reflect on instance to get its value
-	v := reflect.ValueOf(instance)
-
-	if v.Kind() != reflect.Ptr {
-		return fmt.Errorf("expected a pointer to a struct type setting field, got %v", v.Kind())
+func SetField(instance reflect.Value, fieldName string, value interface{}) error {
+	if instance.Kind() != reflect.Ptr {
+		return fmt.Errorf("expected a pointer to a struct type setting field, got %v", instance.Kind())
 	}
 
-	v = v.Elem()
+	instance = instance.Elem()
 
 	// get field by name
-	f := v.FieldByName(field)
-	if !f.IsValid() {
-		return fmt.Errorf("field %s not found", field)
+	field := instance.FieldByName(fieldName)
+	if !field.IsValid() {
+		return fmt.Errorf("field %s not found", fieldName)
 	}
 
 	// set field value
-	if !f.CanSet() {
-		return fmt.Errorf("field %s cannot be set", field)
+	if !field.CanSet() {
+		return fmt.Errorf("field %s cannot be set", fieldName)
 	}
 
-	v = reflect.ValueOf(value)
+	newValue := reflect.ValueOf(value)
 	switch {
-	case !v.IsValid():
+	case !newValue.IsValid():
 		// might be a nil pointer
-		v = reflect.Zero(f.Type())
-	case f.Type() != v.Type():
+		newValue = reflect.Zero(field.Type())
+	case field.Type() != newValue.Type():
 		var err error
-		v, err = convertType(f, v, field)
+		newValue, err = convertType(field, newValue, fieldName)
 		if err != nil {
-			return fmt.Errorf("error fixing type for field %s: %w", field, err)
+			return fmt.Errorf("error fixing type for field %s: %w", fieldName, err)
 		}
 	}
 
-	f.Set(v)
+	field.Set(newValue)
 
 	return nil
 }
