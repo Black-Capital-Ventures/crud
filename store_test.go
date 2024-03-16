@@ -6,10 +6,6 @@ import (
 	"github.com/black-capital-ventures/crud"
 )
 
-func (t testOutput) GetInstance() crud.StorageOutput {
-	return testOutput{}
-}
-
 type testOutput struct {
 	Column1 string `crud:"column1"`
 }

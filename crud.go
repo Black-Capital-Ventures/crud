@@ -6,7 +6,4 @@ type (
 		// The arguments should be in the same order as the query's placeholders.
 		GetArgs() []interface{}
 	}
-	StorageOutput interface {
-		GetInstance() StorageOutput
-	}
 )

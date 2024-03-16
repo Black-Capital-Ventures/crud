@@ -77,10 +77,6 @@ func requireNotEqual(t *testing.T, forbidden, actual interface{}, msg ...string)
 	}
 }
 
-func (u userOutput) GetInstance() crud.StorageOutput {
-	return userOutput{}
-}
-
 func (u userInput) GetArgs() []interface{} {
 	return []interface{}{u.Name, u.Age}
 }

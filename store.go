@@ -7,15 +7,15 @@ import (
 	"database/sql"
 )
 
-type Store[in StorageInput, out StorageOutput] struct {
+type Store[in StorageInput, out any] struct {
 	*sql.DB
 }
 
-func NewStore[in StorageInput, out StorageOutput](db *sql.DB) *Store[in, out] {
+func NewStore[in StorageInput, out any](db *sql.DB) *Store[in, out] {
 	return &Store[in, out]{DB: db}
 }
 
-func (s Store[in, out]) Scan(instance StorageOutput, rows *sql.Rows) (output out, err error) {
+func (s Store[in, out]) Scan(instance any, rows *sql.Rows) (output out, err error) {
 	if !rows.Next() {
 		return output, fmt.Errorf("no rows returned")
 	}
@@ -55,7 +55,7 @@ func (s Store[in, out]) Scan(instance StorageOutput, rows *sql.Rows) (output out
 	return output, nil
 }
 
-func SetField(instance StorageOutput, field string, value interface{}) error {
+func SetField(instance any, field string, value interface{}) error {
 	// reflect on instance to get its value
 	v := reflect.ValueOf(instance)
 
@@ -92,11 +92,11 @@ func SetField(instance StorageOutput, field string, value interface{}) error {
 }
 
 // GetColumnsFieldNames returns a slice ordered by the order of the columns slice.
-// The slice contains the field names of the struct that implements the StorageOutput interface.
+// The slice contains the field names of the struct input
 // The field names are obtained from the "crud" tag of the struct fields.
 // If a field does not have a "crud" tag, it is not included in the returned slice.
 // If a field has a "crud" tag that is not present in the columns slice, it is not included in the returned slice.
-func GetColumnsFieldNames(instance StorageOutput, columns []string) ([]string, error) {
+func GetColumnsFieldNames(instance any, columns []string) ([]string, error) {
 	t := reflect.TypeOf(instance)
 
 	// Ensure a pointer to a struct type was passed.
