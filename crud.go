@@ -36,7 +36,7 @@ func (s Store[in, out]) QueryRow(query string, input in, output out) (err error)
 
 	defer rows.Close()
 
-	output, err = scan[out](output, rows)
+	err = scan(output, rows)
 	if err != nil {
 		return fmt.Errorf("error scanning %T: %w", output, err)
 	}
@@ -44,15 +44,15 @@ func (s Store[in, out]) QueryRow(query string, input in, output out) (err error)
 	return nil
 }
 
-func scan[T any](instance any, rows *sql.Rows) (output T, err error) {
+func scan(instance any, rows *sql.Rows) (err error) {
 	if !rows.Next() {
-		return output, fmt.Errorf("no rows returned")
+		return fmt.Errorf("no rows returned")
 	}
 
 	// scan rows into map
 	columns, err := rows.Columns()
 	if err != nil {
-		return output, fmt.Errorf("error getting columns: %w", err)
+		return fmt.Errorf("error getting columns: %w", err)
 	}
 
 	// create a slice of interface{} to hold the values of each column
@@ -65,23 +65,23 @@ func scan[T any](instance any, rows *sql.Rows) (output T, err error) {
 	err = rows.Scan(valuePtrs...)
 
 	if err != nil {
-		return output, fmt.Errorf("error scanning rows: %w", err)
+		return fmt.Errorf("error scanning rows: %w", err)
 	}
 
 	// set instance fields
 	orderedFieldNames, err := GetColumnsFieldNames(instance, columns)
 	if err != nil {
-		return output, fmt.Errorf("error getting ordered field names: %w", err)
+		return fmt.Errorf("error getting ordered field names: %w", err)
 	}
 
 	for i, fieldName := range orderedFieldNames {
 		err = SetField(instance, fieldName, values[i])
 		if err != nil {
-			return output, fmt.Errorf("error setting field: %w", err)
+			return fmt.Errorf("error setting field: %w", err)
 		}
 	}
 
-	return output, nil
+	return nil
 }
 
 func SetField(instance any, field string, value interface{}) error {

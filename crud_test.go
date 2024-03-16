@@ -38,13 +38,13 @@ func TestMain(t *testing.T) {
 	}
 
 	// Insert a new user
-	store := crud.NewStore[*userInput, *userOutput](db)
+	store := crud.NewStore[userInput, *userOutput](db)
 
 	input := userInput{Name: "John Doe", Age: 30}
 	output := userOutput{}
 	err = store.QueryRow(
 		"INSERT INTO users (name, age) VALUES ($1, $2) RETURNING id, name, age",
-		&input,
+		input,
 		&output,
 	)
 	if err != nil {
