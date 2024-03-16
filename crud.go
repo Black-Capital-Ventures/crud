@@ -5,6 +5,8 @@ import (
 	"reflect"
 
 	"database/sql"
+
+	"github.com/google/uuid"
 )
 
 func NewStore[in Input, out any](db *sql.DB) *Store[in, out] {
@@ -36,7 +38,7 @@ func (s Store[in, out]) QueryRow(query string, input in, output out) (err error)
 
 	defer rows.Close()
 
-	err = scan(output, rows)
+	err = Scan(output, rows)
 	if err != nil {
 		return fmt.Errorf("error scanning %T: %w", output, err)
 	}
@@ -44,7 +46,7 @@ func (s Store[in, out]) QueryRow(query string, input in, output out) (err error)
 	return nil
 }
 
-func scan(instance any, rows *sql.Rows) (err error) {
+func Scan(instance any, rows *sql.Rows) (err error) {
 	if !rows.Next() {
 		return fmt.Errorf("no rows returned")
 	}
@@ -101,21 +103,31 @@ func SetField(instance any, field string, value interface{}) error {
 	}
 
 	// set field value
-	if f.CanSet() {
-		v := reflect.ValueOf(value)
-		if f.Type() != v.Type() {
-			// check if the value can be converted to the field type
-			if v.Type().ConvertibleTo(f.Type()) {
-				v = v.Convert(f.Type())
-			} else {
-				return fmt.Errorf("field %s type mismatch %v != %v", field, f.Type(), v.Type())
-			}
-		}
-
-		f.Set(v)
-	} else {
+	if !f.CanSet() {
 		return fmt.Errorf("field %s cannot be set", field)
 	}
+
+	v = reflect.ValueOf(value)
+	if f.Type() != v.Type() {
+		if f.Type() == reflect.TypeOf(uuid.UUID{}) && v.Type() == reflect.TypeOf("") {
+			// special case for UUID
+			uuidValue, err := uuid.Parse(v.String())
+			if err != nil {
+				return fmt.Errorf("error parsing UUID from field %s: %v", field, err)
+			}
+
+			v = reflect.ValueOf(uuidValue)
+		}
+
+		// check if the value can be converted to the field type
+		if !v.Type().ConvertibleTo(f.Type()) {
+			return fmt.Errorf("field %s type mismatch %v != %v", field, f.Type(), v.Type())
+		}
+
+		v = v.Convert(f.Type())
+	}
+
+	f.Set(v)
 
 	return nil
 }
