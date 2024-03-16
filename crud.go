@@ -108,45 +108,49 @@ func SetField(instance any, field string, value interface{}) error {
 	}
 
 	v = reflect.ValueOf(value)
-	if !v.IsValid() {
+	switch {
+	case !v.IsValid():
 		// might be a nil pointer
-		f.Set(reflect.Zero(f.Type()))
-		return nil
-	}
-
-	if f.Type() != v.Type() {
-		// Check if the field type is *uuid.UUID (pointer to uuid.UUID)
-		if f.Type() == reflect.TypeOf(&uuid.UUID{}) && v.Type() == reflect.TypeOf("") {
-			uuidValue, err := uuid.Parse(v.String())
-			if err != nil {
-				return fmt.Errorf("error parsing UUID from field %s: %v", field, err)
-			}
-
-			// Set the field with a pointer to the UUID
-			v = reflect.ValueOf(&uuidValue)
+		v = reflect.Zero(f.Type())
+	case f.Type() != v.Type():
+		var err error
+		v, err = convertType(f, v, field)
+		if err != nil {
+			return fmt.Errorf("error fixing type for field %s: %w", field, err)
 		}
-
-		if f.Type() == reflect.TypeOf(uuid.UUID{}) && v.Type() == reflect.TypeOf("") {
-			// Handle non-pointer uuid.UUID field
-			uuidValue, err := uuid.Parse(v.String())
-			if err != nil {
-				return fmt.Errorf("error parsing UUID from field %s: %v", field, err)
-			}
-
-			v = reflect.ValueOf(uuidValue)
-		}
-
-		// check if the value can be converted to the field type
-		if !v.Type().ConvertibleTo(f.Type()) {
-			return fmt.Errorf("field %s type mismatch %v != %v", field, f.Type(), v.Type())
-		}
-
-		v = v.Convert(f.Type())
 	}
 
 	f.Set(v)
 
 	return nil
+}
+
+func convertType(f reflect.Value, v reflect.Value, field string) (reflect.Value, error) {
+	switch {
+	case f.Type() == reflect.TypeOf(&uuid.UUID{}) && v.Type() == reflect.TypeOf(""):
+		// fix uuid pointer
+		uuidValue, err := uuid.Parse(v.String())
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("error parsing UUID from field %s: %w", field, err)
+		}
+
+		v = reflect.ValueOf(&uuidValue)
+	case f.Type() == reflect.TypeOf(uuid.UUID{}) && v.Type() == reflect.TypeOf(""):
+		// fix uuid
+		uuidValue, err := uuid.Parse(v.String())
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("error parsing UUID from field %s: %w", field, err)
+		}
+
+		v = reflect.ValueOf(uuidValue)
+	case !v.Type().ConvertibleTo(f.Type()):
+		return reflect.Value{}, fmt.Errorf("field %s type mismatch %v != %v", field, f.Type(), v.Type())
+	default:
+		// fix any convertible type
+		v = v.Convert(f.Type())
+	}
+
+	return v, nil
 }
 
 // GetColumnsFieldNames returns a slice ordered by the order of the columns slice.
