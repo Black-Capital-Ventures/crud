@@ -108,9 +108,26 @@ func SetField(instance any, field string, value interface{}) error {
 	}
 
 	v = reflect.ValueOf(value)
+	if !v.IsValid() {
+		// might be a nil pointer
+		f.Set(reflect.Zero(f.Type()))
+		return nil
+	}
+
 	if f.Type() != v.Type() {
+		// Check if the field type is *uuid.UUID (pointer to uuid.UUID)
+		if f.Type() == reflect.TypeOf(&uuid.UUID{}) && v.Type() == reflect.TypeOf("") {
+			uuidValue, err := uuid.Parse(v.String())
+			if err != nil {
+				return fmt.Errorf("error parsing UUID from field %s: %v", field, err)
+			}
+
+			// Set the field with a pointer to the UUID
+			v = reflect.ValueOf(&uuidValue)
+		}
+
 		if f.Type() == reflect.TypeOf(uuid.UUID{}) && v.Type() == reflect.TypeOf("") {
-			// special case for UUID
+			// Handle non-pointer uuid.UUID field
 			uuidValue, err := uuid.Parse(v.String())
 			if err != nil {
 				return fmt.Errorf("error parsing UUID from field %s: %v", field, err)

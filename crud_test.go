@@ -26,8 +26,10 @@ type userOutput struct {
 }
 
 type testOutput struct {
-	Column1 string    `crud:"column1"`
-	ID      uuid.UUID `crud:"id"`
+	Column1 string     `crud:"column1"`
+	ID      uuid.UUID  `crud:"id"`
+	IDPtr   *uuid.UUID `crud:"id_ptr"`
+	NullID  *uuid.UUID `crud:"null_id_ptr"`
 }
 
 func TestMain(t *testing.T) {
@@ -137,13 +139,15 @@ func TestScan(t *testing.T) {
 		},
 		"Full Data Match with Complex Types": {
 			mock: func() {
-				rows := sqlmock.NewRows([]string{"column1", "id"}).AddRow("testValue", id)
+				rows := sqlmock.NewRows([]string{"column1", "id", "id_ptr", "null_id_ptr"}).AddRow("testValue", id, id, nil)
 				mock.ExpectQuery("SELECT").WillReturnRows(rows)
 			},
 			assert: func(t *testing.T, output *testOutput, err error) {
 				require.Nil(t, err, "Expected no error when scanning rows")
 				require.Equal(t, "testValue", output.Column1, "Expected Column1 to be 'testValue'")
 				require.Equal(t, id.String(), output.ID.String(), "Expected ID to match the value from the row")
+				require.Equal(t, id.String(), output.IDPtr.String(), "Expected IDPtr to match the value from the row")
+				require.Nil(t, output.NullID, "Expected NullID to be nil")
 			},
 		},
 	}
