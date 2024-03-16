@@ -14,12 +14,12 @@ type (
 		Name string
 		Age  int
 	}
-	userType struct {
-		ID   int
-		Name string
-		Age  int
-	}
 )
+type userOutput struct {
+	ID   int    `crud:"id"`
+	Name string `crud:"name"`
+	Age  int    `crud:"age"`
+}
 
 func TestMain(t *testing.T) {
 	db, err := sql.Open("postgres", "postgres://postgres:@localhost:5432/test?sslmode=disable")
@@ -34,23 +34,26 @@ func TestMain(t *testing.T) {
 	}
 
 	// Insert a new user
-	store := crud.NewStore[userInput, userType](db)
+	store := crud.NewStore[*userInput, *userOutput](db)
 
-	user, err := store.Create(
+	input := userInput{Name: "John Doe", Age: 30}
+	output := userOutput{}
+	err = store.Create(
 		"INSERT INTO users (name, age) VALUES ($1, $2) RETURNING id, name, age",
-		userInput{Name: "John Doe", Age: 30},
+		&input,
+		&output,
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	expected := userType{Name: "John Doe", Age: 30}
+	expected := &userOutput{Name: "John Doe", Age: 30}
 
-	assert(t, expected.Age, user.Age)
-	assert(t, expected.Name, user.Name)
+	assertEqual(t, expected.Age, output.Age)
+	assertEqual(t, expected.Name, output.Name)
 }
 
-func assert(t *testing.T, expected, actual interface{}, msg ...string) {
+func assertEqual(t *testing.T, expected, actual interface{}, msg ...string) {
 	t.Helper()
 
 	if expected != actual {
@@ -58,21 +61,24 @@ func assert(t *testing.T, expected, actual interface{}, msg ...string) {
 	}
 }
 
-func (u userType) GetInstance() crud.StorageOutput {
-	return userType{}
+func requireEqual(t *testing.T, expected, actual interface{}, msg ...string) {
+	t.Helper()
+
+	if expected != actual {
+		t.Fatalf("expected %v, got %v %v", expected, actual, msg)
+	}
 }
 
-func (u userType) Scan(rows *sql.Rows) (crud.StorageOutput, error) {
-	if !rows.Next() {
-		return u, nil
-	}
+func requireNotEqual(t *testing.T, forbidden, actual interface{}, msg ...string) {
+	t.Helper()
 
-	err := rows.Scan(&u.ID, &u.Name, &u.Age)
-	if err != nil {
-		return u, err
+	if forbidden == actual {
+		t.Fatalf("expected %v to differ from %v %v", actual, forbidden, msg)
 	}
+}
 
-	return u, nil
+func (u userOutput) GetInstance() crud.StorageOutput {
+	return userOutput{}
 }
 
 func (u userInput) GetArgs() []interface{} {
