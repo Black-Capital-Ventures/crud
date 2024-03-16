@@ -21,6 +21,10 @@ type userOutput struct {
 	Age  int    `crud:"age"`
 }
 
+type testOutput struct {
+	Column1 string `crud:"column1"`
+}
+
 func TestMain(t *testing.T) {
 	db, err := sql.Open("postgres", "postgres://postgres:@localhost:5432/test?sslmode=disable")
 	if err != nil {
@@ -79,4 +83,17 @@ func requireNotEqual(t *testing.T, forbidden, actual interface{}, msg ...string)
 
 func (u userInput) GetArgs() []interface{} {
 	return []interface{}{u.Name, u.Age}
+}
+
+func TestSetField(t *testing.T) {
+	instance := &testOutput{}
+
+	// Test case: Successfully setting an exported field's value
+	err := crud.SetField(instance, "Column1", "new value")
+	requireEqual(t, nil, err, "Expected no error setting an exported field")
+	requireEqual(t, "new value", instance.Column1, "The ExportedField should have been updated to 'new value'")
+
+	// Test case: Attempting to set a non-existing field
+	err = crud.SetField(instance, "NonExistingField", "value")
+	requireNotEqual(t, nil, err, "Expected an error setting a non-existing field")
 }
