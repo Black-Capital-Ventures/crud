@@ -7,6 +7,10 @@ import (
 	"database/sql"
 )
 
+func NewStore[in Input, out any](db *sql.DB) *Store[in, out] {
+	return &Store[in, out]{db: db}
+}
+
 type (
 	// Store is a generic store for CRUD operations.
 	Store[in Input, out any] struct {
@@ -21,11 +25,26 @@ type (
 	}
 )
 
-func NewStore[in Input, out any](db *sql.DB) *Store[in, out] {
-	return &Store[in, out]{db: db}
+func (s Store[in, out]) QueryRow(query string, input in, output out) (err error) {
+	rows, err := s.db.Query(
+		query,
+		input.GetArgs()...,
+	)
+	if err != nil {
+		return fmt.Errorf("error creating %T: %w", output, err)
+	}
+
+	defer rows.Close()
+
+	output, err = scan[out](output, rows)
+	if err != nil {
+		return fmt.Errorf("error scanning %T: %w", output, err)
+	}
+
+	return nil
 }
 
-func (s Store[in, out]) scan(instance any, rows *sql.Rows) (output out, err error) {
+func scan[T any](instance any, rows *sql.Rows) (output T, err error) {
 	if !rows.Next() {
 		return output, fmt.Errorf("no rows returned")
 	}
@@ -134,23 +153,4 @@ func GetColumnsFieldNames(instance any, columns []string) ([]string, error) {
 	}
 
 	return columnsFieldNameMap, nil
-}
-
-func (s Store[in, out]) Create(query string, input in, output out) (err error) {
-	rows, err := s.db.Query(
-		query,
-		input.GetArgs()...,
-	)
-	if err != nil {
-		return fmt.Errorf("error creating %T: %w", output, err)
-	}
-
-	defer rows.Close()
-
-	output, err = s.scan(output, rows)
-	if err != nil {
-		return fmt.Errorf("error scanning %T: %w", output, err)
-	}
-
-	return nil
 }

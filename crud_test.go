@@ -42,7 +42,7 @@ func TestMain(t *testing.T) {
 
 	input := userInput{Name: "John Doe", Age: 30}
 	output := userOutput{}
-	err = store.Create(
+	err = store.QueryRow(
 		"INSERT INTO users (name, age) VALUES ($1, $2) RETURNING id, name, age",
 		&input,
 		&output,
