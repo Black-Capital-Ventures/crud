@@ -38,7 +38,7 @@ func (s Store[in, out]) QueryRow(query string, input in, output out) (err error)
 
 	defer rows.Close()
 
-	err = Scan(output, rows)
+	err = scan(output, rows)
 	if err != nil {
 		return fmt.Errorf("error scanning %T: %w", output, err)
 	}
@@ -46,7 +46,7 @@ func (s Store[in, out]) QueryRow(query string, input in, output out) (err error)
 	return nil
 }
 
-func Scan(instance any, rows *sql.Rows) (err error) {
+func scan(instance any, rows *sql.Rows) (err error) {
 	if !rows.Next() {
 		return fmt.Errorf("no rows returned")
 	}
@@ -71,13 +71,13 @@ func Scan(instance any, rows *sql.Rows) (err error) {
 	}
 
 	// set instance fields
-	orderedFieldNames, err := GetColumnsFieldNames(instance, columns)
+	orderedFieldNames, err := getColumnsFieldNames(instance, columns)
 	if err != nil {
 		return fmt.Errorf("error getting ordered field names: %w", err)
 	}
 
 	for i, fieldName := range orderedFieldNames {
-		err = SetField(reflect.ValueOf(instance), fieldName, values[i])
+		err = setField(reflect.ValueOf(instance), fieldName, values[i])
 		if err != nil {
 			return fmt.Errorf("error setting field: %w", err)
 		}
@@ -86,7 +86,7 @@ func Scan(instance any, rows *sql.Rows) (err error) {
 	return nil
 }
 
-func SetField(instance reflect.Value, fieldName string, value interface{}) error {
+func setField(instance reflect.Value, fieldName string, value interface{}) error {
 	if instance.Kind() != reflect.Ptr {
 		return fmt.Errorf("expected a pointer to a struct type setting field, got %v", instance.Kind())
 	}
@@ -106,11 +106,12 @@ func SetField(instance reflect.Value, fieldName string, value interface{}) error
 
 	newValue := reflect.ValueOf(value)
 	switch {
-	case !newValue.IsValid():
-		// might be a nil pointer
+	case value == nil:
+		// nil pointer
 		newValue = reflect.Zero(field.Type())
 	case field.Type() != newValue.Type():
 		var err error
+
 		newValue, err = convertType(field, newValue, fieldName)
 		if err != nil {
 			return fmt.Errorf("error fixing type for field %s: %w", fieldName, err)
@@ -124,38 +125,51 @@ func SetField(instance reflect.Value, fieldName string, value interface{}) error
 
 func convertType(f reflect.Value, v reflect.Value, field string) (reflect.Value, error) {
 	switch {
-	case f.Type() == reflect.TypeOf(&uuid.UUID{}) && v.Type() == reflect.TypeOf(""):
-		// fix uuid pointer
-		uuidValue, err := uuid.Parse(v.String())
-		if err != nil {
-			return reflect.Value{}, fmt.Errorf("error parsing UUID from field %s: %w", field, err)
+	case (f.Type().Kind() == reflect.Ptr && f.Type().Elem() == reflect.TypeOf(uuid.UUID{})):
+		// Assuming v is a []byte from SQL scan
+		vBytes, ok := v.Interface().([]byte)
+		if !ok {
+			return reflect.Value{}, fmt.Errorf("expected a []byte for field %s, got %v", field, v.Type())
 		}
 
-		v = reflect.ValueOf(&uuidValue)
-	case f.Type() == reflect.TypeOf(uuid.UUID{}) && v.Type() == reflect.TypeOf(""):
-		// fix uuid
-		uuidValue, err := uuid.Parse(v.String())
-		if err != nil {
-			return reflect.Value{}, fmt.Errorf("error parsing UUID from field %s: %w", field, err)
+		var uuidValue uuid.UUID
+		var err error
+		// Check if the byte slice length suggests a string representation (e.g., 36 bytes including hyphens)
+		if len(vBytes) == 36 {
+			// If so, parse the string representation of the UUID
+			strUUID := string(vBytes)
+			uuidValue, err = uuid.Parse(strUUID)
+			if err != nil {
+				return reflect.Value{}, err // handle error
+			}
+		} else {
+			// Assume it's a raw byte slice representing the UUID
+			uuidValue, err = uuid.FromBytes(vBytes)
+			if err != nil {
+				return reflect.Value{}, err // handle error
+			}
 		}
 
-		v = reflect.ValueOf(uuidValue)
+		if f.Type().Kind() == reflect.Ptr {
+			return reflect.ValueOf(&uuidValue), nil
+		}
+
+		return reflect.ValueOf(uuidValue), nil
+
 	case !v.Type().ConvertibleTo(f.Type()):
 		return reflect.Value{}, fmt.Errorf("field %s type mismatch %v != %v", field, f.Type(), v.Type())
 	default:
 		// fix any convertible type
-		v = v.Convert(f.Type())
+		return v.Convert(f.Type()), nil
 	}
-
-	return v, nil
 }
 
-// GetColumnsFieldNames returns a slice ordered by the order of the columns slice.
+// getColumnsFieldNames returns a slice ordered by the order of the columns slice.
 // The slice contains the field names of the struct input
 // The field names are obtained from the "crud" tag of the struct fields.
 // If a field does not have a "crud" tag, it is not included in the returned slice.
 // If a field has a "crud" tag that is not present in the columns slice, it is not included in the returned slice.
-func GetColumnsFieldNames(instance any, columns []string) ([]string, error) {
+func getColumnsFieldNames(instance any, columns []string) ([]string, error) {
 	t := reflect.TypeOf(instance)
 
 	// Ensure a pointer to a struct type was passed.

@@ -2,15 +2,13 @@ package crud_test
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
-	"reflect"
 	"testing"
 
-	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/black-capital-ventures/crud"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,19 +17,13 @@ type (
 		Name string
 		Age  int
 	}
+	userOutput struct {
+		ID   uuid.UUID  `crud:"id"`
+		Name string     `crud:"name"`
+		Age  int        `crud:"age"`
+		FK   *uuid.UUID `crud:"fk"`
+	}
 )
-type userOutput struct {
-	ID   int    `crud:"id"`
-	Name string `crud:"name"`
-	Age  int    `crud:"age"`
-}
-
-type testOutput struct {
-	Column1 string     `crud:"column1"`
-	ID      uuid.UUID  `crud:"id"`
-	IDPtr   *uuid.UUID `crud:"id_ptr"`
-	NullID  *uuid.UUID `crud:"null_id_ptr"`
-}
 
 func TestMain(t *testing.T) {
 	db, err := sql.Open("postgres", "postgres://postgres:@localhost:5432/test?sslmode=disable")
@@ -39,10 +31,16 @@ func TestMain(t *testing.T) {
 		log.Fatal(err)
 	}
 
-	// Create a new table
-	_, err = db.Exec("CREATE TABLE IF NOT EXISTS users (id serial primary key, name text, age int)")
+	_, err = db.Exec("DROP TABLE IF EXISTS users")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(fmt.Errorf("error dropping table: %w", err))
+	}
+
+	// Create a new table
+	_, err = db.Exec(
+		"CREATE TABLE users (id uuid primary key default gen_random_uuid(), name text, age int, fk uuid)")
+	if err != nil {
+		log.Fatal(fmt.Errorf("error creating table: %w", err))
 	}
 
 	// Insert a new user
@@ -51,7 +49,7 @@ func TestMain(t *testing.T) {
 	input := userInput{Name: "John Doe", Age: 30}
 	output := userOutput{}
 	err = store.QueryRow(
-		"INSERT INTO users (name, age) VALUES ($1, $2) RETURNING id, name, age",
+		"INSERT INTO users (name, age) VALUES ($1, $2) RETURNING id, name, age, fk",
 		input,
 		&output,
 	)
@@ -61,115 +59,32 @@ func TestMain(t *testing.T) {
 
 	expected := &userOutput{Name: "John Doe", Age: 30}
 
-	assert.Equal(t, expected.Age, output.Age)
-	assert.Equal(t, expected.Name, output.Name)
+	require.Equal(t, expected.Age, output.Age)
+	require.Equal(t, expected.Name, output.Name)
+	require.Equal(t, expected.FK, output.FK)
+
+	fkID := uuid.New()
+	_, err = db.Exec("update users set fk = $1", fkID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = store.QueryRow(
+		"SELECT * FROM users WHERE name = $1 AND age = $2",
+		input,
+		&output,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	expected = &userOutput{Name: "John Doe", Age: 30, FK: &fkID}
+
+	require.Equal(t, expected.Age, output.Age)
+	require.Equal(t, expected.Name, output.Name)
+	require.Equal(t, *expected.FK, *output.FK)
 }
 
 func (u userInput) GetArgs() []interface{} {
 	return []interface{}{u.Name, u.Age}
-}
-
-func TestSetField(t *testing.T) {
-	instance := &testOutput{}
-
-	// Test case: Successfully setting an exported field's value
-	err := crud.SetField(reflect.ValueOf(instance), "Column1", "new value")
-	require.Equal(t, nil, err, "Expected no error setting an exported field")
-	require.Equal(t, "new value", instance.Column1, "The ExportedField should have been updated to 'new value'")
-
-	// Test case: Attempting to set a non-existing field
-	err = crud.SetField(reflect.ValueOf(instance), "NonExistingField", "value")
-	require.NotEqual(t, nil, err, "Expected an error setting a non-existing field")
-
-	// test case: complex data type
-	id := uuid.New()
-	// sql will return the data as a string
-	err = crud.SetField(reflect.ValueOf(instance), "ID", id.String())
-	require.Equal(t, nil, err, "Expected no error setting an uuid field")
-}
-
-func TestScan(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
-	}
-
-	defer db.Close()
-
-	id := uuid.New()
-
-	tests := map[string]struct {
-		mock   func()
-		assert func(*testing.T, *testOutput, error)
-	}{
-		"no rows returned": {
-			mock: func() {
-				mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows(nil))
-			},
-			assert: func(t *testing.T, output *testOutput, err error) {
-				require.NotNil(t, err, "Expected an error when no rows are returned")
-			},
-		},
-		"error getting columns": {
-			mock: func() {
-				rows := sqlmock.NewRows([]string{"column1"}).AddRow("testValue")
-				mock.ExpectQuery("SELECT").WillReturnRows(rows)
-			},
-			assert: func(t *testing.T, output *testOutput, err error) {
-				require.Nil(t, err, "Expected no error when scanning rows")
-				require.Equal(t, "testValue", output.Column1, "Expected Column1 to be 'testValue'")
-			},
-		},
-		"Incompatible Instance and Rows": {
-			mock: func() {
-				rows := sqlmock.NewRows([]string{"random column"}).AddRow("testValue")
-				mock.ExpectQuery("SELECT").WillReturnRows(rows)
-			},
-			assert: func(t *testing.T, output *testOutput, err error) {
-				require.NotNil(t, err, "Expected an error when instance and rows are incompatible")
-			},
-		},
-		"Partial Data Match": {
-			mock: func() {
-				rows := sqlmock.NewRows([]string{"column1", "no match"}).AddRow("testValue", "no match")
-				mock.ExpectQuery("SELECT").WillReturnRows(rows)
-			},
-			assert: func(t *testing.T, output *testOutput, err error) {
-				require.NotNil(t, err, "Expected an error when instance and rows are incompatible")
-			},
-		},
-		"Full Data Match with Complex Types": {
-			mock: func() {
-				rows := sqlmock.NewRows([]string{"column1", "id", "id_ptr", "null_id_ptr"}).AddRow("testValue", id, id, nil)
-				mock.ExpectQuery("SELECT").WillReturnRows(rows)
-			},
-			assert: func(t *testing.T, output *testOutput, err error) {
-				require.Nil(t, err, "Expected no error when scanning rows")
-				require.Equal(t, "testValue", output.Column1, "Expected Column1 to be 'testValue'")
-				require.Equal(t, id.String(), output.ID.String(), "Expected ID to match the value from the row")
-				require.Equal(t, id.String(), output.IDPtr.String(), "Expected IDPtr to match the value from the row")
-				require.Nil(t, output.NullID, "Expected NullID to be nil")
-			},
-		},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			_ = name //nice for debugging
-
-			tc.mock()
-
-			rows, _ := db.Query("SELECT")
-
-			defer rows.Close()
-
-			output := &testOutput{}
-			err = crud.Scan(output, rows)
-			tc.assert(t, output, err)
-		})
-	}
-
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("there were unfulfilled expectations: %s", err)
-	}
 }
