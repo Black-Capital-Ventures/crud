@@ -125,29 +125,14 @@ func setField(instance reflect.Value, fieldName string, value interface{}) error
 
 func convertType(f reflect.Value, v reflect.Value, field string) (reflect.Value, error) {
 	switch {
+	case f.Type() == reflect.TypeOf(uuid.UUID{}):
+		// uuid
+		fallthrough
 	case (f.Type().Kind() == reflect.Ptr && f.Type().Elem() == reflect.TypeOf(uuid.UUID{})):
-		// Assuming v is a []byte from SQL scan
-		vBytes, ok := v.Interface().([]byte)
-		if !ok {
-			return reflect.Value{}, fmt.Errorf("expected a []byte for field %s, got %v", field, v.Type())
-		}
-
-		var uuidValue uuid.UUID
-		var err error
-		// Check if the byte slice length suggests a string representation (e.g., 36 bytes including hyphens)
-		if len(vBytes) == 36 {
-			// If so, parse the string representation of the UUID
-			strUUID := string(vBytes)
-			uuidValue, err = uuid.Parse(strUUID)
-			if err != nil {
-				return reflect.Value{}, err // handle error
-			}
-		} else {
-			// Assume it's a raw byte slice representing the UUID
-			uuidValue, err = uuid.FromBytes(vBytes)
-			if err != nil {
-				return reflect.Value{}, err // handle error
-			}
+		// *uuid
+		uuidValue, err := parseUUID(v, field)
+		if err != nil {
+			return reflect.Value{}, err
 		}
 
 		if f.Type().Kind() == reflect.Ptr {
@@ -162,6 +147,36 @@ func convertType(f reflect.Value, v reflect.Value, field string) (reflect.Value,
 		// fix any convertible type
 		return v.Convert(f.Type()), nil
 	}
+}
+
+func parseUUID(v reflect.Value, field string) (uuid.UUID, error) {
+	// Assuming v is a []byte from SQL scan
+	vBytes, ok := v.Interface().([]byte)
+	if !ok {
+		return uuid.Nil, fmt.Errorf("expected a []byte for field %s, got %v", field, v.Type())
+	}
+
+	var uuidValue uuid.UUID
+	var err error
+
+	// Check if the byte slice length suggests a string representation (e.g., 36 bytes including hyphens)
+	if len(vBytes) == 36 {
+		// If so, parse the string representation of the UUID
+		strUUID := string(vBytes)
+		uuidValue, err = uuid.Parse(strUUID)
+
+		if err != nil {
+			return uuid.Nil, err
+		}
+	} else {
+		// Assume it's a raw byte slice representing the UUID
+		uuidValue, err = uuid.FromBytes(vBytes)
+		if err != nil {
+			return uuid.Nil, err
+		}
+	}
+
+	return uuidValue, nil
 }
 
 // getColumnsFieldNames returns a slice ordered by the order of the columns slice.
