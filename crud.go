@@ -125,11 +125,8 @@ func setField(instance reflect.Value, fieldName string, value interface{}) error
 
 func convertType(f reflect.Value, v reflect.Value, field string) (reflect.Value, error) {
 	switch {
-	case f.Type() == reflect.TypeOf(uuid.UUID{}):
-		// uuid
-		fallthrough
-	case (f.Type().Kind() == reflect.Ptr && f.Type().Elem() == reflect.TypeOf(uuid.UUID{})):
-		// *uuid
+	case f.Type() == reflect.TypeOf(uuid.UUID{}) || (f.Type().Kind() == reflect.Ptr && f.Type().Elem() == reflect.TypeOf(uuid.UUID{})):
+		// uuid and *uuid
 		uuidValue, err := parseUUID(v, field)
 		if err != nil {
 			return reflect.Value{}, err
@@ -141,12 +138,36 @@ func convertType(f reflect.Value, v reflect.Value, field string) (reflect.Value,
 
 		return reflect.ValueOf(uuidValue), nil
 
+	case f.Type().Kind() == reflect.Ptr:
+		// *int and *string
+		switch f.Type().Elem().Kind() {
+		case reflect.Int:
+			return parseValuePointer[int](v, f, field)
+		case reflect.String:
+			return parseValuePointer[string](v, f, field)
+		case reflect.Int64:
+			return parseValuePointer[int64](v, f, field)
+		default:
+			return reflect.Value{}, fmt.Errorf("unsupported pointer type for field %s: %v", field, f.Type().Elem().Kind())
+		}
 	case !v.Type().ConvertibleTo(f.Type()):
 		return reflect.Value{}, fmt.Errorf("field %s type mismatch %v != %v", field, f.Type(), v.Type())
 	default:
 		// fix any convertible type
 		return v.Convert(f.Type()), nil
 	}
+}
+
+func parseValuePointer[T int | string | int64](v reflect.Value, f reflect.Value, field string) (reflect.Value, error) {
+	// check if parsable
+	if !v.Type().ConvertibleTo(f.Type().Elem()) {
+		return reflect.Value{}, fmt.Errorf("pointer field %s type mismatch %v != %v", field, f.Type().Elem(), v.Type())
+	}
+
+	// do conversion and return address
+	convertedValue := v.Convert(f.Type().Elem()).Interface().(T)
+
+	return reflect.ValueOf(&convertedValue), nil
 }
 
 func parseUUID(v reflect.Value, field string) (uuid.UUID, error) {

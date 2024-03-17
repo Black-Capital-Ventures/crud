@@ -13,15 +13,19 @@ import (
 
 type (
 	userInput struct {
-		Name       string
-		Age        int
+		Name        string
+		Age         int
+		NullableInt *int
+		// NullableBig *int64
 		FK         uuid.UUID
 		NullableFK uuid.UUID
 	}
 	userOutput struct {
-		ID         uuid.UUID  `crud:"id"`
-		Name       string     `crud:"name"`
-		Age        int        `crud:"age"`
+		ID          uuid.UUID `crud:"id"`
+		Name        string    `crud:"name"`
+		Age         int       `crud:"age"`
+		NullableInt *int      `crud:"nullable_int"`
+		// NullableBig *int64     `crud:"nullable_big"`
 		FK         uuid.UUID  `crud:"fk"`
 		NullableFK *uuid.UUID `crud:"nullable_fk"`
 	}
@@ -34,7 +38,17 @@ type (
 )
 
 func (u userInput) GetArgs() []interface{} {
-	return []interface{}{u.Name, u.Age, u.FK, u.NullableFK}
+	return []interface{}{u.Name, u.Age, u.NullableInt, u.FK, u.NullableFK}
+}
+
+func setUp(t *testing.T, db *sql.DB) {
+	_, err := db.Exec(
+		"CREATE TABLE users (id uuid primary key default gen_random_uuid()," +
+			" name text, age  int not null,nullable_int int, fk uuid not null, nullable_fk uuid)",
+	)
+	if err != nil {
+		t.Fatalf("error creating table: %v", err)
+	}
 }
 
 func TestQueryRow(t *testing.T) {
@@ -53,6 +67,7 @@ func TestQueryRow(t *testing.T) {
 		output   = &userOutput{}
 		expected = userOutput{}
 		fkID     = uuid.New()
+		_int     = 10
 		cases    = []struct {
 			name    string
 			arrange arrange
@@ -62,13 +77,13 @@ func TestQueryRow(t *testing.T) {
 			{
 				name: "insert user and scan",
 				arrange: func(expected *userOutput, input *userInput, output *userOutput) {
-					*expected = userOutput{Name: "John Doe", Age: 30, FK: fkID, NullableFK: &fkID}
-					*input = userInput{Name: "John Doe", Age: 30, FK: fkID, NullableFK: fkID}
+					*expected = userOutput{Name: "John Doe", Age: _int, NullableInt: &_int, FK: fkID, NullableFK: &fkID}
+					*input = userInput{Name: "John Doe", Age: _int, NullableInt: &_int, FK: fkID, NullableFK: fkID}
 					*output = userOutput{}
 				},
 				act: func(store *crud.Store[inputT, outputT], input userInput, output *userOutput) error {
 					return store.QueryRow(
-						"INSERT INTO users (name, age, fk, nullable_fk) VALUES ($1, $2, $3, $4) RETURNING *",
+						"INSERT INTO users (name, age, nullable_int, fk, nullable_fk) VALUES ($1, $2, $3, $4, $5) RETURNING *",
 						input,
 						output,
 					)
@@ -80,6 +95,8 @@ func TestQueryRow(t *testing.T) {
 					require.NotEqual(t, uuid.Nil, output.ID, "id")
 					require.Equal(t, expected.NullableFK, output.NullableFK, "nullable_fk")
 					require.Equal(t, expected.FK, output.FK, "fk")
+					require.Equal(t, expected.NullableInt, output.NullableInt, "nullable_int")
+					// require.Equal(t, expected.NullableBig, output.NullableBig, "nullable_big")
 				},
 			},
 		}
@@ -89,15 +106,6 @@ func TestQueryRow(t *testing.T) {
 		tt.arrange(&expected, &input, output)
 		err = tt.act(store, input, output)
 		tt.assert(t, err, expected, output)
-	}
-}
-
-func setUp(t *testing.T, db *sql.DB) {
-	_, err := db.Exec(
-		"CREATE TABLE users (id uuid primary key default gen_random_uuid(), name text, age int, fk uuid not null, nullable_fk uuid)",
-	)
-	if err != nil {
-		t.Fatalf("error creating table: %v", err)
 	}
 }
 
